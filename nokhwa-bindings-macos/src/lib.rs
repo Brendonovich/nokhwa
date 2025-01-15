@@ -1042,7 +1042,6 @@ mod internal {
 
             unsafe {
                 let _: () = msg_send![self.inner, setValue:selected_format forKey:activefmtkey];
-                println!("Set active format");
 
                 let min_frame_duration: *mut Object =
                     msg_send![selected_range, valueForKey: min_frame_duration];

@@ -155,7 +155,7 @@ impl CaptureBackendTrait for AVFoundationCaptureDevice {
             .device
             .supported_formats()?
             .into_iter()
-            .filter(|x| x.format() != fourcc);
+            .filter(|x| x.format() == fourcc);
         let mut res_list = HashMap::new();
         for format in supported_cfmt {
             match res_list.get_mut(&format.resolution()) {
