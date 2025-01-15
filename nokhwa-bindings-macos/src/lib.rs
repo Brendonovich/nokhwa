@@ -988,13 +988,10 @@ mod internal {
 
         // thank you ffmpeg
         pub fn set_all(&mut self, descriptor: CameraFormat) -> Result<(), NokhwaError> {
-            println!("Setting camera format: {:?}", descriptor);
             self.lock()?;
-            println!("Camera locked for configuration");
             let format_list = try_ns_arr_to_vec::<AVCaptureDeviceFormat, NokhwaError>(unsafe {
                 msg_send![self.inner, formats]
             })?;
-            println!("Retrieved {} formats", format_list.len());
             let format_description_sel = sel!(formatDescription);
 
             let mut selected_format: Option<*mut Object> = None;
@@ -1005,25 +1002,18 @@ mod internal {
                     unsafe { msg_send![format.internal, performSelector: format_description_sel] };
                 let dimensions = unsafe { CMVideoFormatDescriptionGetDimensions(format_desc_ref) };
 
-                println!(
-                    "Checking format: {}x{}",
-                    dimensions.width, dimensions.height
-                );
                 if dimensions.height == descriptor.resolution().height() as i32
                     && dimensions.width == descriptor.resolution().width() as i32
                 {
                     selected_format = Some(format.internal);
-                    println!("Found matching format");
 
                     for range in ns_arr_to_vec::<AVFrameRateRange>(unsafe {
                         msg_send![format.internal, videoSupportedFrameRateRanges]
                     }) {
                         let max_fps: f64 = unsafe { msg_send![range.inner, maxFrameRate] };
 
-                        println!("Checking frame rate: {}", max_fps);
                         if (f64::from(descriptor.frame_rate()) - max_fps).abs() < 0.01 {
                             selected_range = Some(range.inner);
-                            println!("Found matching frame rate");
                             break;
                         }
                     }
@@ -1037,7 +1027,6 @@ mod internal {
             let (selected_format, selected_range) = match (selected_format, selected_range) {
                 (Some(format), Some(range)) => (format, range),
                 _ => {
-                    println!("Failed to find matching format and frame rate");
                     return Err(NokhwaError::SetPropertyError {
                         property: "CameraFormat".to_string(),
                         value: descriptor.to_string(),
@@ -1059,11 +1048,9 @@ mod internal {
                     msg_send![selected_range, valueForKey: min_frame_duration];
                 let _: () = msg_send![self.inner, setValue:min_frame_duration forKey:active_video_min_frame_duration];
                 let _: () = msg_send![self.inner, setValue:min_frame_duration forKey:active_video_max_frame_duration];
-                println!("Set frame durations");
             }
 
             self.unlock();
-            println!("Camera unlocked");
             Ok(())
         }
 
