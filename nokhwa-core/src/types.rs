@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     cmp::Ordering,
+    collections::HashMap,
     fmt::{Display, Formatter},
     str::FromStr,
 };
@@ -25,6 +26,10 @@ pub enum RequestedFormatType {
     HighestFrameRate(u32),
     Exact(CameraFormat),
     Closest(CameraFormat),
+    ClosestIgnoringFormat {
+        resolution: Resolution,
+        frame_rate: u32,
+    },
     None,
 }
 
@@ -195,6 +200,44 @@ impl RequestedFormat<'_> {
                 let frame_rate = framerate_map.first()?.1;
                 Some(CameraFormat::new(resolution, c.format(), frame_rate))
             }
+            // Used by Cap so that we can handle multiple formats ourself.
+            // Also removes the hard resolution requirement.
+            #[allow(clippy::cast_possible_wrap)]
+            RequestedFormatType::ClosestIgnoringFormat {
+                resolution,
+                frame_rate,
+            } => {
+                let same_fmt_formats = all_formats.iter().copied().collect::<Vec<CameraFormat>>();
+                let mut resolution_map = same_fmt_formats
+                    .iter()
+                    .map(|x| {
+                        let res = x.resolution();
+                        let x_diff = res.x() as i32 - resolution.x() as i32;
+                        let y_diff = res.y() as i32 - resolution.y() as i32;
+                        let dist_no_sqrt = (x_diff.abs()).pow(2) + (y_diff.abs()).pow(2);
+                        (dist_no_sqrt, res)
+                    })
+                    .collect::<Vec<(i32, Resolution)>>();
+                resolution_map.sort_by(|a, b| a.0.cmp(&b.0));
+                resolution_map.dedup_by(|a, b| a.0.eq(&b.0));
+                let resolution = resolution_map.first()?.1;
+
+                let frame_rates = all_formats
+                    .iter()
+                    .map(|cfmt| (cfmt.frame_rate(), cfmt.format()))
+                    .collect::<HashMap<u32, FrameFormat>>();
+                // sort FPSes
+                let mut framerate_map = frame_rates
+                    .iter()
+                    .map(|(x, f)| {
+                        let abs = *x as i32 - frame_rate as i32;
+                        (abs.unsigned_abs(), (*x, *f))
+                    })
+                    .collect::<Vec<(u32, (u32, FrameFormat))>>();
+                framerate_map.sort_by(|a, b| a.0.cmp(&b.0));
+                let frame_rate = framerate_map.first()?.1;
+                Some(CameraFormat::new(resolution, frame_rate.1, frame_rate.0))
+            }
             RequestedFormatType::None => all_formats
                 .iter()
                 .find(|fmt| self.wanted_decoder.contains(&fmt.format()))
@@ -299,6 +342,7 @@ pub enum FrameFormat {
     NV12,
     GRAY,
     RAWRGB,
+    BGRA,
 }
 
 impl Display for FrameFormat {
@@ -319,6 +363,9 @@ impl Display for FrameFormat {
             FrameFormat::NV12 => {
                 write!(f, "NV12")
             }
+            FrameFormat::BGRA => {
+                write!(f, "BGRA")
+            }
         }
     }
 }
@@ -332,6 +379,7 @@ impl FromStr for FrameFormat {
             "GRAY" => Ok(FrameFormat::GRAY),
             "RAWRGB" => Ok(FrameFormat::RAWRGB),
             "NV12" => Ok(FrameFormat::NV12),
+            "BGRA" => Ok(FrameFormat::BGRA),
             _ => Err(NokhwaError::StructureError {
                 structure: "FrameFormat".to_string(),
                 error: format!("No match for {s}"),
@@ -349,6 +397,7 @@ pub const fn frame_formats() -> &'static [FrameFormat] {
         FrameFormat::NV12,
         FrameFormat::GRAY,
         FrameFormat::RAWRGB,
+        FrameFormat::BGRA,
     ]
 }
 
@@ -360,6 +409,7 @@ pub const fn color_frame_formats() -> &'static [FrameFormat] {
         FrameFormat::YUYV,
         FrameFormat::NV12,
         FrameFormat::RAWRGB,
+        FrameFormat::BGRA,
     ]
 }
 
@@ -1478,21 +1528,23 @@ pub fn mjpeg_to_rgb(data: &[u8], rgba: bool) -> Result<Vec<u8>, NokhwaError> {
 
     let scanlines_res = match jpeg_decompress.read_scanlines::<u8>() {
         Ok(v) => v,
-        Err(why) => return Err(NokhwaError::ProcessFrameError {
-            src: FrameFormat::MJPEG,
-            destination: "JPEG".to_string(),
-            error: why.to_string(),
-        })
+        Err(why) => {
+            return Err(NokhwaError::ProcessFrameError {
+                src: FrameFormat::MJPEG,
+                destination: "JPEG".to_string(),
+                error: why.to_string(),
+            })
+        }
     };
     // assert!(jpeg_decompress.finish_decompress());
-    jpeg_decompress.finish().map_err(|why| {
-        NokhwaError::ProcessFrameError {
+    jpeg_decompress
+        .finish()
+        .map_err(|why| NokhwaError::ProcessFrameError {
             src: FrameFormat::MJPEG,
             destination: "RGB888".to_string(),
             error: why.to_string(),
-        }
-    })?;
-    
+        })?;
+
     Ok(scanlines_res)
 }
 
@@ -1548,21 +1600,21 @@ pub fn buf_mjpeg_to_rgb(data: &[u8], dest: &mut [u8], rgba: bool) -> Result<(), 
         });
     }
 
-    jpeg_decompress.read_scanlines_into::<u8>(dest).map_err(|why| {
-        NokhwaError::ProcessFrameError {
+    jpeg_decompress
+        .read_scanlines_into::<u8>(dest)
+        .map_err(|why| NokhwaError::ProcessFrameError {
             src: FrameFormat::MJPEG,
             destination: "RGB888".to_string(),
             error: why.to_string(),
-        }
-    })?;
+        })?;
     // assert!(jpeg_decompress.finish_decompress());
-    jpeg_decompress.finish().map_err(|why| {
-         NokhwaError::ProcessFrameError {
+    jpeg_decompress
+        .finish()
+        .map_err(|why| NokhwaError::ProcessFrameError {
             src: FrameFormat::MJPEG,
             destination: "RGB888".to_string(),
             error: why.to_string(),
-        }
-    })?;
+        })?;
     Ok(())
 }
 
@@ -1807,6 +1859,58 @@ pub fn buf_nv12_to_rgb(
                 out[base_index + 4] = px1[1];
                 out[base_index + 5] = px1[2];
             }
+        }
+    }
+
+    Ok(())
+}
+
+#[inline]
+pub fn bgra_to_rgb(
+    resolution: Resolution,
+    data: &[u8],
+    rgba: bool,
+) -> Result<Vec<u8>, NokhwaError> {
+    let pixel_size = if rgba { 4 } else { 3 };
+    let buffer_size = (pixel_size * resolution.width() * resolution.height()) as usize;
+
+    let mut dest = vec![0; buffer_size];
+    buf_bgra_to_rgb(resolution, data, &mut dest, rgba)?;
+
+    Ok(dest)
+}
+
+#[allow(clippy::similar_names)]
+#[inline]
+pub fn buf_bgra_to_rgb(
+    resolution: Resolution,
+    data: &[u8],
+    out: &mut [u8],
+    rgba: bool,
+) -> Result<(), NokhwaError> {
+    // TODO: Error on excess pixels in stride for now, will need to figure out how to handle it
+    let expected_length = (resolution.width() * resolution.height() * 4) as usize;
+    if resolution.width() % 2 != 0 || resolution.height() % 2 != 0 || data.len() != expected_length
+    {
+        return Err(NokhwaError::ProcessFrameError {
+            src: FrameFormat::NV12,
+            destination: "RGB".to_string(),
+            error: "bad resolution".to_string(),
+        });
+    }
+
+    if rgba {
+        out.copy_from_slice(data);
+        for chunk in out.chunks_mut(4) {
+            chunk.swap(0, 2);
+        }
+    } else {
+        let mut index = 0;
+        for chunk in data.chunks(4) {
+            out[index] = chunk[2];
+            out[index + 1] = chunk[1];
+            out[index + 2] = chunk[0];
+            index += 3;
         }
     }
 

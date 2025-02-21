@@ -213,8 +213,9 @@ mod internal {
         base::Nil,
         foundation::{NSArray, NSDictionary, NSInteger, NSString, NSUInteger},
     };
+    use core_media::CVPixelBufferGetPixelFormatType;
     use core_media_sys::{
-        kCMPixelFormat_24RGB, kCMPixelFormat_422YpCbCr8_yuvs,
+        kCMPixelFormat_24RGB, kCMPixelFormat_32BGRA, kCMPixelFormat_422YpCbCr8_yuvs,
         kCMPixelFormat_8IndexedGray_WhiteIsZero, kCMVideoCodecType_422YpCbCr8,
         kCMVideoCodecType_JPEG, kCMVideoCodecType_JPEG_OpenDML, CMFormatDescriptionGetMediaSubType,
         CMFormatDescriptionRef, CMSampleBufferRef, CMTime, CMVideoDimensions,
@@ -238,7 +239,6 @@ mod internal {
         runtime::{Class, Object, Protocol, Sel, BOOL, NO, YES},
     };
     use once_cell::sync::Lazy;
-    use std::ffi::CString;
     use std::{
         borrow::Cow,
         cmp::Ordering,
@@ -248,6 +248,7 @@ mod internal {
         ffi::{c_float, c_void, CStr},
         sync::Arc,
     };
+    use std::{ffi::CString, fs::read};
 
     const UTF8_ENCODING: usize = 4;
     type CGFloat = c_float;
@@ -371,8 +372,9 @@ mod internal {
             kCMPixelFormat_8IndexedGray_WhiteIsZero => Some(FrameFormat::GRAY),
             kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
             | kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-            | 875704438 => Some(FrameFormat::NV12),
+            | 875704438 => Some(FrameFormat::YUYV),
             kCMPixelFormat_24RGB => Some(FrameFormat::RAWRGB),
+            kCMPixelFormat_32BGRA => Some(FrameFormat::BGRA),
             _ => None,
         }
     }
@@ -434,10 +436,21 @@ mod internal {
                     let ptr = bufferlck_cv.cast::<Sender<(Vec<u8>, FrameFormat)>>();
                     Arc::from_raw(ptr)
                 };
-                if let Err(_) = buffer_sndr.send((buffer_as_vec, FrameFormat::GRAY)) {
+
+                let fourcc = unsafe { CVPixelBufferGetPixelFormatType(image_buffer) };
+                dbg!(buffer_as_vec.len());
+                let format = match raw_fcc_to_frameformat(dbg!(fourcc)) {
+                    Some(f) => f,
+                    None => {
+                        return;
+                    }
+                };
+
+                if let Err(_) = buffer_sndr.send((buffer_as_vec, format)) {
                     // FIXME: dont, what the fuck???
                     return;
                 }
+
                 std::mem::forget(buffer_sndr);
             }
 
@@ -516,7 +529,8 @@ mod internal {
             AVCaptureDeviceType::WideAngle,
             AVCaptureDeviceType::Telephoto,
             AVCaptureDeviceType::TrueDepth,
-            AVCaptureDeviceType::ExternalUnknown,
+            AVCaptureDeviceType::External,
+            AVCaptureDeviceType::ContinuityCamera,
         ])?
         .devices())
     }
@@ -547,6 +561,8 @@ mod internal {
         Telephoto,
         TrueDepth,
         ExternalUnknown,
+        External,
+        ContinuityCamera,
     }
 
     impl From<AVCaptureDeviceType> for *mut Object {
@@ -573,6 +589,10 @@ mod internal {
                 }
                 AVCaptureDeviceType::ExternalUnknown => {
                     str_to_nsstr("AVCaptureDeviceTypeExternalUnknown")
+                }
+                AVCaptureDeviceType::External => str_to_nsstr("AVCaptureDeviceTypeExternal"),
+                AVCaptureDeviceType::ContinuityCamera => {
+                    str_to_nsstr("AVCaptureDeviceTypeContinuityCamera")
                 }
             }
         }
@@ -1002,7 +1022,12 @@ mod internal {
                         }
                     }
                 }
+
+                if !selected_format.is_null() && !selected_range.is_null() {
+                    break;
+                }
             }
+
             if selected_range.is_null() || selected_format.is_null() {
                 return Err(NokhwaError::SetPropertyError {
                     property: "CameraFormat".to_string(),
@@ -2284,6 +2309,7 @@ mod internal {
                 FrameFormat::GRAY => kCMPixelFormat_8IndexedGray_WhiteIsZero,
                 FrameFormat::NV12 => kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
                 FrameFormat::RAWRGB => kCMPixelFormat_24RGB,
+                FrameFormat::BGRA => kCMPixelFormat_32BGRA,
             };
             let obj = CFNumber::from(cmpixelfmt as i32);
             let obj = obj.as_CFTypeRef() as *mut Object;

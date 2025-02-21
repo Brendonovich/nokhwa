@@ -251,8 +251,9 @@ impl CaptureBackendTrait for MediaFoundationCaptureDevice {
         ))
     }
 
-    fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
-        self.inner.raw_bytes()
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
+        let format = self.frame_format();
+        self.inner.raw_bytes().map(|b| (b, format))
     }
 
     fn stop_stream(&mut self) -> Result<(), NokhwaError> {

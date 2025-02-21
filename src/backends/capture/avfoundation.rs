@@ -155,7 +155,7 @@ impl CaptureBackendTrait for AVFoundationCaptureDevice {
             .device
             .supported_formats()?
             .into_iter()
-            .filter(|x| x.format() != fourcc);
+            .filter(|x| x.format() == fourcc);
         let mut res_list = HashMap::new();
         for format in supported_cfmt {
             match res_list.get_mut(&format.resolution()) {
@@ -282,14 +282,14 @@ impl CaptureBackendTrait for AVFoundationCaptureDevice {
         self.refresh_camera_format()?;
         let cfmt = self.camera_format();
         let b = self.frame_raw()?;
-        let buffer = Buffer::new(cfmt.resolution(), b.as_ref(), cfmt.format());
+        let buffer = Buffer::new_from_cow(cfmt.resolution(), b.0, b.1);
         let _ = self.frame_buffer_receiver.drain();
         Ok(buffer)
     }
 
-    fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
         let result = match self.frame_buffer_receiver.recv() {
-            Ok(recv) => Ok(Cow::from(recv.0)),
+            Ok(recv) => Ok((Cow::from(recv.0), recv.1)),
             Err(why) => Err(NokhwaError::ReadFrameError(why.to_string())),
         };
         result
@@ -480,7 +480,7 @@ impl CaptureBackendTrait for AVFoundationCaptureDevice {
         todo!()
     }
 
-    fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
         todo!()
     }
 

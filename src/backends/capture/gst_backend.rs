@@ -526,7 +526,7 @@ impl GStreamerCaptureDevice {
         Ok(imagebuf)
     }
 
-    fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
         let bus = match self.pipeline.bus() {
             Some(bus) => bus,
             None => {
@@ -551,7 +551,10 @@ impl GStreamerCaptureDevice {
             }
         }
 
-        Ok(Cow::from(self.image_lock.lock().to_vec()))
+        Ok(
+            (Cow::from(self.image_lock.lock().to_vec())),
+            self.frame_foramt(),
+        )
     }
 
     fn stop_stream(&mut self) -> Result<(), NokhwaError> {

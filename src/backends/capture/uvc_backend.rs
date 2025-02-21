@@ -518,7 +518,7 @@ impl<'a> CaptureBackendTrait for UVCCaptureDevice<'a> {
         Ok(imagebuf)
     }
 
-    fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
         // assertions
         if !self.borrow_active_stream_init().get() {
             return Err(NokhwaError::ReadFrameError(
@@ -529,9 +529,9 @@ impl<'a> CaptureBackendTrait for UVCCaptureDevice<'a> {
         let f_recv = self.borrow_frame_receiver();
         let messages_iter = f_recv.drain();
         match messages_iter.last() {
-            Some(msg) => Ok(Cow::from(msg)),
+            Some(msg) => Ok((Cow::from(msg), self.frame_format())),
             None => match f_recv.recv() {
-                Ok(msg) => Ok(Cow::from(msg)),
+                Ok(msg) => Ok((Cow::from(msg), self.frame_format())),
                 Err(why) => {
                     return Err(NokhwaError::ReadFrameError(format!(
                         "All sender dropped: {}",

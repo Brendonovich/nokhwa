@@ -15,8 +15,9 @@
  */
 use crate::error::NokhwaError;
 use crate::types::{
-    buf_mjpeg_to_rgb, buf_nv12_to_rgb, buf_yuyv422_to_rgb, color_frame_formats, frame_formats,
-    mjpeg_to_rgb, nv12_to_rgb, yuyv422_to_rgb, FrameFormat, Resolution,
+    bgra_to_rgb, buf_bgra_to_rgb, buf_mjpeg_to_rgb, buf_nv12_to_rgb, buf_yuyv422_to_rgb,
+    color_frame_formats, frame_formats, mjpeg_to_rgb, nv12_to_rgb, yuyv422_to_rgb, FrameFormat,
+    Resolution,
 };
 use image::{Luma, LumaA, Pixel, Rgb, Rgba};
 use std::fmt::Debug;
@@ -77,6 +78,7 @@ impl FormatDecoder for RgbFormat {
                 .collect()),
             FrameFormat::RAWRGB => Ok(data.to_vec()),
             FrameFormat::NV12 => nv12_to_rgb(resolution, data, false),
+            FrameFormat::BGRA => bgra_to_rgb(resolution, data, false),
         }
     }
 
@@ -112,6 +114,7 @@ impl FormatDecoder for RgbFormat {
                 Ok(())
             }
             FrameFormat::NV12 => buf_nv12_to_rgb(resolution, data, dest, false),
+            FrameFormat::BGRA => buf_bgra_to_rgb(resolution, data, dest, false),
         }
     }
 }
@@ -151,6 +154,7 @@ impl FormatDecoder for RgbAFormat {
                 .flat_map(|x| [x[0], x[1], x[2], 255])
                 .collect()),
             FrameFormat::NV12 => nv12_to_rgb(resolution, data, true),
+            FrameFormat::BGRA => bgra_to_rgb(resolution, data, true),
         }
     }
 
@@ -194,6 +198,7 @@ impl FormatDecoder for RgbAFormat {
                 Ok(())
             }
             FrameFormat::NV12 => buf_nv12_to_rgb(resolution, data, dest, true),
+            FrameFormat::BGRA => buf_bgra_to_rgb(resolution, data, dest, true),
         }
     }
 }
@@ -253,6 +258,12 @@ impl FormatDecoder for LumaFormat {
                 .chunks(3)
                 .map(|px| ((i32::from(px[0]) + i32::from(px[1]) + i32::from(px[2])) / 3) as u8)
                 .collect()),
+            // TODO: Actually implement Luma conversion. We aren't using it right now, so eh
+            FrameFormat::BGRA => Err(NokhwaError::ProcessFrameError {
+                src: fcc,
+                destination: "RGB => Luma".to_string(),
+                error: "Conversion Error".to_string(),
+            }),
         }
     }
 
@@ -265,7 +276,7 @@ impl FormatDecoder for LumaFormat {
     ) -> Result<(), NokhwaError> {
         match fcc {
             // TODO: implement!
-            FrameFormat::MJPEG | FrameFormat::YUYV | FrameFormat::NV12 => {
+            FrameFormat::MJPEG | FrameFormat::YUYV | FrameFormat::NV12 | FrameFormat::BGRA => {
                 Err(NokhwaError::ProcessFrameError {
                     src: fcc,
                     destination: "Luma => RGB".to_string(),
@@ -343,6 +354,11 @@ impl FormatDecoder for LumaAFormat {
                 destination: "RGB => RGB".to_string(),
                 error: "Conversion Error".to_string(),
             }),
+            FrameFormat::BGRA => Err(NokhwaError::ProcessFrameError {
+                src: fcc,
+                destination: "RGB => Luma".to_string(),
+                error: "Conversion Error".to_string(),
+            }),
         }
     }
 
@@ -396,11 +412,14 @@ impl FormatDecoder for LumaAFormat {
                 destination: "RGB => RGB".to_string(),
                 error: "Conversion Error".to_string(),
             }),
+            FrameFormat::BGRA => Err(NokhwaError::ProcessFrameError {
+                src: fcc,
+                destination: "RGB => Luma".to_string(),
+                error: "Conversion Error".to_string(),
+            }),
         }
     }
 }
-
-
 
 /// let image: ImageBuffer<Rgb<u8>, Vec<u8>> = buffer.to_image::<YuyvFormat>();
 /// ```

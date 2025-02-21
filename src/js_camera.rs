@@ -2485,10 +2485,10 @@ impl JSCamera {
     /// Creates an off-screen canvas and a `<video>` element (if not already attached) and returns a raw `Cow<[u8]>` RGBA frame.
     /// # Errors
     /// If a cast fails, the camera fails to attach, the currently attached node is invalid, or writing/reading from the canvas fails, this will error.
-    pub fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+    pub fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
         let image_data = self.frame_image_data()?.data().0;
 
-        Ok(Cow::from(image_data))
+        Ok((Cow::from(image_data), self.frame_format()))
     }
 
     /// This takes the output from [`frame_raw()`](crate::js_camera::JSCamera::frame_raw) and turns it into an `ImageBuffer<Rgb<u8>, Vec<u8>>`.

@@ -541,9 +541,9 @@ impl CaptureBackendTrait for OpenCvCaptureDevice {
         ))
     }
 
-    fn frame_raw(&mut self) -> Result<Cow<[u8]>, NokhwaError> {
+    fn frame_raw(&mut self) -> Result<(Cow<[u8]>, FrameFormat), NokhwaError> {
         let cow = self.raw_frame_vec()?;
-        Ok(cow)
+        Ok((cow, self.frame_format()))
     }
 
     fn stop_stream(&mut self) -> Result<(), NokhwaError> {
