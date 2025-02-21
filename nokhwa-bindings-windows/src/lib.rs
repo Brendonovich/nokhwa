@@ -276,11 +276,10 @@ pub mod wmf {
             });
         }
 
-
         let mut device_list = vec![];
 
         if count <= 0 {
-            return Ok(device_list)
+            return Ok(device_list);
         }
 
         unsafe { from_raw_parts(unused_mf_activate.assume_init(), count as usize) }
@@ -971,7 +970,12 @@ pub mod wmf {
                     };
 
                     let frame_rate = match unsafe { media_type.GetUINT64(&MF_MT_FRAME_RATE) } {
-                        Ok(fps) => fps as u32,
+                        Ok(fps) => {
+                            let numerator = fps >> 32;
+                            let denominator = fps & 0xFFFFFFFF;
+
+                            (numerator / denominator) as u32
+                        }
                         Err(why) => {
                             return Err(NokhwaError::GetPropertyError {
                                 property: "MF_MT_FRAME_RATE".to_string(),
